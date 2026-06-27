@@ -1,0 +1,27 @@
+{
+  "summary": "Backend-only verification of the missing-.env fix (Hetzner KeyError: MONGO_URL). Backend boots cleanly with the documented 3 required env vars (MONGO_URL, DB_NAME, JWT_SECRET) and all optional vars empty — confirmed via supervisor logs (no startup errors, 'Application startup complete') and an isolated `import server` smoke test that returned IMPORT OK with SMS_PROVIDER='' (_sms_is_live=False), EMERGENT_PUSH_KEY='placeholder', VAPID_PUBLIC_KEY=''. /api/healthz → 200 {status:ok}. Full regression: 14/14 pytest cases PASS (100%) against the public URL https://loyalty-kiosk-tablet.preview.emergentagent.com — covering health, admin login (admin@pizzadenfert.fr/Admin1234! returns token + is_admin:true), OTP request DEMO MODE (demo_mode:true + dev_code present), OTP verify (login/creates user with qr_token), public /api/menu (21 items from MongoDB, no Supabase), admin /api/admin/menu GET/POST/PATCH/DELETE + 401 without token, /api/admin/scan valid+invalid QR, /api/admin/customer/add-pizza (+3 → coffee threshold reached), /api/admin/customer/redeem coffee (clears available reward), /api/admin/dashboard?period=all, public /api/ads/slides + admin ad slide CRUD, admin /api/admin/search by phone and by name. The .env.example accurately documents the required vs optional split. Fix is verified — clones with a proper backend/.env (3 required values) will start without KeyError and all core flows pass.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_loyalty_api.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py correctly uses os.environ[...] for the 3 REQUIRED vars (fail-fast) and os.environ.get(... ) or '' (with sensible defaults) for OPTIONAL vars (SMS_PROVIDER, OTP_DEMO_MODE, TWILIO_*, OVH_*, SUPABASE_*, VAPID_*, EMERGENT_PUSH_KEY). This matches the documented contract in .env.example.",
+    ".env.example is accurate and self-documenting (REQUIRED vs OPTIONAL clearly marked, generation hint for JWT_SECRET via 'openssl rand -hex 32'). A self-hoster running 'cp backend/.env.example backend/.env' and filling the 3 required values will boot the backend successfully.",
+    "Non-blocking: server.py is now ~1400+ lines; consider splitting into routers (auth/menu/loyalty/reservations/ads/push) for maintainability. Carried over from iteration_2."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "n/a (skipped per request)"},
+  "seed_data_creation": "Pytest creates one OTP customer per session (phone +3360XXXXXXXX, name 'TEST_Cust'). Menu/ad slides are created and deleted within the same test. No leftover production data modified.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend URL: EXPO_PUBLIC_BACKEND_URL=https://loyalty-kiosk-tablet.preview.emergentagent.com. Admin: admin@pizzadenfert.fr / Admin1234!. OTP DEMO MODE: POST /api/auth/otp/request → dev_code in response. Run regression: cd /app && python -m pytest backend/tests/test_loyalty_api.py -v. Required backend env vars: MONGO_URL, DB_NAME, JWT_SECRET. All other vars (SMS_PROVIDER, TWILIO_*, OVH_*, SUPABASE_*, VAPID_*, EMERGENT_PUSH_KEY) are OPTIONAL and may be empty.",
+  "rca_of_issue": "Original Hetzner clone failed with KeyError: MONGO_URL because backend/.env is git-ignored and was therefore missing from the user's checkout. Fix shipped: (1) backend/.env.example committed with REQUIRED vs OPTIONAL clearly documented and a JWT_SECRET generation hint; (2) server.py keeps fail-fast os.environ[...] for the 3 required vars so the issue is surfaced loudly at boot rather than at first DB call. Verification in this env: backend boots, no KeyError, 14/14 pytest pass. Self-hosters now have a clear recovery path: cp backend/.env.example backend/.env → fill 3 required values → restart."
+}
