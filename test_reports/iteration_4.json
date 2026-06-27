@@ -1,0 +1,27 @@
+{
+  "summary": "Backend regression after requirements.txt cleanup (removed unused google-ai-generativelanguage / google-api-core / protobuf / litellm / emergentintegrations). New requirements.txt contains ONLY the 12 packages server.py actually imports (fastapi, starlette, uvicorn[standard], python-dotenv, motor, pymongo, pydantic, email-validator, bcrypt, PyJWT, httpx, pywebpush). Verified in an isolated fresh venv: pip install succeeds with NO ResolutionImpossible, `pip check` returns 'No broken requirements found', and `import server` succeeds (FastAPI app loads, title='Pizza Denfert API'). Live regression against https://loyalty-kiosk-tablet.preview.emergentagent.com: 14/14 pytest cases PASS (100%) — health (/api/healthz=200 {status:ok}), admin login (admin@pizzadenfert.fr/Admin1234! → token + is_admin:true; wrong pw → 401), OTP demo (request returns demo_mode:true + dev_code; verify creates/logs in user with qr_token), public /api/menu returns 21 MongoDB items, admin /api/admin/menu full CRUD (GET/POST/PATCH/DELETE/404-after-delete) + 401 gating when no token, /api/admin/scan valid+invalid QR (400 on bad payload), /api/admin/customer/add-pizza (+3 → coffee threshold reached), /api/admin/customer/redeem coffee (removes from available_rewards), /api/admin/dashboard?period=all, public /api/ads/slides + admin ads CRUD (201/200/200), /api/admin/search by phone and by name. Backend supervisor logs clean (Application startup complete, menu seed idempotent). No functional regression introduced by the dependency trim.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_loyalty_api.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "requirements.txt is now minimal, pinned, and matches server.py imports 1:1. Eliminating the Google AI / protobuf / litellm transitive set was the correct fix for the ResolutionImpossible (protobuf>=5.29.6 vs <6.0.0). No application code touched, so existing behaviour is preserved.",
+    "Verified isolated install: fresh venv → `pip install -r requirements.txt` succeeds, `pip check` clean, `import server` OK. Self-hosted deploys will now resolve dependencies without conflict.",
+    "Carryover (non-blocking): server.py is ~1400+ lines; consider splitting into routers (auth/menu/loyalty/reservations/ads/push) for maintainability."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (14/14)", "frontend": "n/a (skipped per request)"},
+  "seed_data_creation": "Pytest creates one OTP customer per session (phone +3360XXXXXXXX, name 'TEST_Cust') and a transient menu item + ad slide that are deleted in-test. No production data modified.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend URL: EXPO_PUBLIC_BACKEND_URL=https://loyalty-kiosk-tablet.preview.emergentagent.com. Admin: admin@pizzadenfert.fr / Admin1234!. OTP DEMO MODE: POST /api/auth/otp/request returns dev_code. Run regression: cd /app && python -m pytest backend/tests/test_loyalty_api.py -v. Required backend env vars: MONGO_URL, DB_NAME, JWT_SECRET. To verify dependency resolution in a clean venv: python -m venv /tmp/v && /tmp/v/bin/pip install -r /app/backend/requirements.txt && /tmp/v/bin/pip check.",
+  "rca_of_issue": "Original self-hosting failure: pip ResolutionImpossible due to google-api-core==2.31.0 requiring protobuf>=5.29.6 while google-ai-generativelanguage==0.6.15 capped protobuf<6.0.0. Root cause: requirements.txt was a full `pip freeze` of a shared dev venv and included Google AI / protobuf / litellm / emergentintegrations packages that the backend never imports. Fix applied (already in tree): requirements.txt rewritten to a minimal pinned list of the 12 packages server.py imports. Verification: (a) fresh venv install + pip check clean + import server OK, (b) full live API regression 14/14 PASS. No mitigation needed beyond the already-committed requirements.txt."
+}
