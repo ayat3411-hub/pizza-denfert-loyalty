@@ -463,6 +463,27 @@ async def menu():
     return await db.menu.find({}, {"_id": 0}).to_list(500)
 
 
+async def _bump_menu_rev() -> int:
+    """Increment the menu revision so clients can cheaply detect CMS changes."""
+    doc = await db.meta.find_one_and_update(
+        {"_id": "menu"},
+        {"$inc": {"rev": 1}, "$set": {"updated_at": now().isoformat()}},
+        upsert=True, return_document=True,
+    )
+    return int((doc or {}).get("rev", 1))
+
+
+@api.get("/menu/version")
+async def menu_version():
+    """Tiny endpoint the customer apps poll to know when to refetch the menu.
+    Returns a monotonically increasing `rev` (bumped on every CMS menu write)
+    plus the live item count, so a changed value = the menu changed."""
+    meta = await db.meta.find_one({"_id": "menu"}, {"_id": 0})
+    count = await db.menu.count_documents({})
+    return {"rev": int((meta or {}).get("rev", 0)), "count": count,
+            "updated_at": (meta or {}).get("updated_at")}
+
+
 # ---- Admin menu management (MongoDB-backed CMS) ----
 MENU_CATEGORIES = ("pizzas", "focaccias", "gratins", "salades", "desserts", "boissons", "vins")
 
@@ -518,6 +539,7 @@ async def admin_create_menu_item(b: MenuItemIn, authorization: Optional[str] = H
     elif b.price is not None:
         doc["price"] = float(b.price)
     await db.menu.insert_one(dict(doc))
+    await _bump_menu_rev()
     doc.pop("_id", None)
     doc.pop("created_at", None)
     return doc
@@ -554,6 +576,7 @@ async def admin_update_menu_item(item_id: str, b: MenuItemUpdate, authorization:
         ops["$unset"] = {k: v for k, v in unset.items() if k in existing}
     if ops:
         await db.menu.update_one({"id": item_id}, ops)
+        await _bump_menu_rev()
     fresh = await db.menu.find_one({"id": item_id}, {"_id": 0})
     return fresh
 
@@ -564,6 +587,7 @@ async def admin_delete_menu_item(item_id: str, authorization: Optional[str] = He
     r = await db.menu.delete_one({"id": item_id})
     if r.deleted_count == 0:
         raise HTTPException(404, "Menu item not found")
+    await _bump_menu_rev()
     return {"deleted": True, "id": item_id}
 
 # Reservations

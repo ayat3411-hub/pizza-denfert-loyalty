@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useState, useCallback } from "react";
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, FlatList, Pressable, RefreshControl } from "react-native";
+import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, FlatList, Pressable, RefreshControl, AppState } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useFocusEffect } from "expo-router";
 import { Image } from "expo-image";
 import { useI18n } from "@/src/i18n";
 import { api } from "@/src/api";
@@ -36,32 +37,61 @@ export default function MenuScreen() {
   const [cat, setCat] = useState<string>("pizzas");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const revRef = useRef<number | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const mapItems = useCallback((items: any[]): Row[] => (items || []).map((m: any) => ({
+    id: m.id,
+    name: m.name,
+    desc: lang === "fr" ? m.desc_fr : m.desc_en,
+    ingredients: lang === "fr" ? m.ingredients_fr : m.ingredients_en,
+    image: m.image,
+    price: typeof m.price === "number" ? m.price : null,
+    prices: m.prices || null,
+    category_slug: m.category,
+  })), [lang]);
+
+  // Fetch the menu. `spinner` shows the full-screen loader (initial load only);
+  // background refreshes update silently so the screen never flickers.
+  const fetchMenu = useCallback(async (spinner = false) => {
+    if (spinner) setLoading(true);
     try {
       const items = await api.menu();
-      const list: Row[] = (items || []).map((m: any) => ({
-        id: m.id,
-        name: m.name,
-        desc: lang === "fr" ? m.desc_fr : m.desc_en,
-        ingredients: lang === "fr" ? m.ingredients_fr : m.ingredients_en,
-        image: m.image,
-        price: typeof m.price === "number" ? m.price : null,
-        prices: m.prices || null,
-        category_slug: m.category,
-      }));
       setCats(LEGACY_FALLBACK_CATS);
-      setRows(list);
+      setRows(mapItems(items));
+      try { const v = await api.menuVersion(); if (v) revRef.current = v.rev; } catch {}
     } catch (e) {
       console.error("Menu load failed", e);
-      setRows([]);
+      if (spinner) setRows([]);
     } finally {
-      setLoading(false);
+      if (spinner) setLoading(false);
     }
-  }, [lang]);
+  }, [mapItems]);
 
-  useEffect(() => { load(); }, [load]);
+  // Refetch only if the CMS revision changed (cheap /menu/version check).
+  const refreshIfChanged = useCallback(async () => {
+    try {
+      const v = await api.menuVersion();
+      if (v && v.rev !== revRef.current) await fetchMenu(false);
+    } catch {}
+  }, [fetchMenu]);
+
+  // Initial load (+ re-localise when language changes).
+  useEffect(() => { fetchMenu(true); }, [fetchMenu]);
+
+  // Auto-refresh #1: whenever the Menu screen regains focus.
+  useFocusEffect(useCallback(() => { refreshIfChanged(); }, [refreshIfChanged]));
+
+  // Auto-refresh #2: light polling (every 20s) while the screen is focused.
+  useFocusEffect(useCallback(() => {
+    const id = setInterval(refreshIfChanged, 20000);
+    return () => clearInterval(id);
+  }, [refreshIfChanged]));
+
+  // Auto-refresh #3: when the app returns to the foreground.
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (s) => { if (s === "active") refreshIfChanged(); });
+    return () => sub.remove();
+  }, [refreshIfChanged]);
 
   const filtered = useMemo(() => rows.filter((r) => r.category_slug === cat), [rows, cat]);
 
@@ -105,7 +135,7 @@ export default function MenuScreen() {
           data={filtered}
           keyExtractor={(i) => i.id}
           contentContainerStyle={{ padding: theme.space.lg, paddingBottom: 140, paddingTop: theme.space.md }}
-          refreshControl={<RefreshControl refreshing={refreshing} tintColor={theme.color.brand} onRefresh={async () => { setRefreshing(true); await load(); setRefreshing(false); }} />}
+          refreshControl={<RefreshControl refreshing={refreshing} tintColor={theme.color.brand} onRefresh={async () => { setRefreshing(true); await fetchMenu(false); setRefreshing(false); }} />}
           renderItem={({ item }) => {
             const sizeKeys = item.prices ? Object.keys(item.prices).filter((k) => k !== "default") : [];
             const showSizes = sizeKeys.length >= 2;

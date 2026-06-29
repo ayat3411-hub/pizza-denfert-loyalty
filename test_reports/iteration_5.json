@@ -1,0 +1,23 @@
+{
+  "summary": "Tested new menu-revision auto-sync feature (backend + frontend). Backend pytest 5/5 PASS: GET /api/menu/version returns {rev,count,updated_at} with int types; POST /api/admin/menu bumps rev +1 and count +1 (status 201); PATCH bumps rev (count unchanged); DELETE bumps rev and decrements count, returns 404 for unknown id; unauthenticated admin calls return 401/403; GET /api/menu reflects added/deleted items and excludes _id. Frontend live-sync verified in browser at /menu (testID menu-screen) with mobile/tablet viewport: category chips render for all 7 categories (pizzas/focaccias/gratins/salades/desserts/boissons/vins), Desserts chip selectable. Created a LiveSyncProbe item via POST /api/admin/menu while the /menu page stayed open (no reload) — the new item appeared in the Desserts list within ~20s via the api.menuVersion polling. After DELETE, the item disappeared within ~12s on the next poll. Conclusion: the auto-refresh mechanism (useFocusEffect + 20s polling + AppState) works end-to-end against the real Pizza Denfert preview backend.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_menu_revision.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Idle kiosk overlay (loyalty mode) takes over after a few seconds of inactivity on / — does not block /menu rendering or polling. Just noted for context: the Desserts list was successfully refreshed before/after the overlay appeared. No fix needed.",
+    "Console shows a 404 from an unknown resource and Expo deprecation warnings (textShadow*, props.pointerEvents, expo-notifications push token listener on web) — pre-existing, not related to this feature."
+  ],
+  "updated_files": ["/app/backend/tests/test_menu_revision.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "None persisted; LiveSyncProbe test item was created and deleted within the same test, also cleaned up by pytest teardown.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Use page.context.request (Playwright APIRequestContext) for backend calls during browser tests — urllib from inside the Python script triggers Cloudflare 1010 bot block, while page.context.request inherits the browser's TLS fingerprint and works. The /menu route is reachable directly and the 20s polling auto-refresh is the deterministic verification path; do not full-reload the browser when testing this feature.",
+  "rca_of_issue": "N/A — feature works as designed: _bump_menu_rev() increments a meta.menu.rev counter on every CMS write; the customer app polls /api/menu/version every 20s while focused and refetches the full /api/menu only when rev changes. Verified create→appear (≤20s) and delete→disappear (≤20s) cycles."
+}

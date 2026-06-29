@@ -51,6 +51,7 @@ export const api = {
   me: () => req("/auth/me"),
   logout: () => req("/auth/logout", { method: "POST" }),
   menu: () => req("/menu"),
+  menuVersion: () => req("/menu/version"),
   adminListMenu: () => req("/admin/menu"),
   adminCreateMenuItem: (data: any) => req("/admin/menu", { method: "POST", body: JSON.stringify(data) }),
   adminUpdateMenuItem: (id: string, patch: any) =>
